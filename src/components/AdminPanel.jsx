@@ -1,9 +1,38 @@
-import { useState } from 'react'
-import { Check, X, Clock, User, Calendar, MapPin, Users, MessageSquare, Filter } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Check, X, Clock, User, Calendar, MapPin, Users, MessageSquare, Filter, Loader2 } from 'lucide-react'
+import { bookingAPI } from '../services/api.js'
 
-const AdminPanel = ({ requests, onRequestAction }) => {
+const AdminPanel = () => {
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [filterStatus, setFilterStatus] = useState('all')
   const [selectedRequest, setSelectedRequest] = useState(null)
+  const [updating, setUpdating] = useState(null)
+
+  // Load requests on component mount
+  useEffect(() => {
+    loadRequests()
+  }, [])
+
+  const loadRequests = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await bookingAPI.getAll()
+      
+      if (response.success) {
+        setRequests(response.data)
+      } else {
+        throw new Error('Failed to load booking requests')
+      }
+    } catch (err) {
+      console.error('Error loading requests:', err)
+      setError('Failed to load booking requests. Please try again later.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const filteredRequests = requests.filter(request => {
     if (filterStatus === 'all') return true
@@ -19,14 +48,62 @@ const AdminPanel = ({ requests, onRequestAction }) => {
     }
   }
 
-  const handleApprove = (requestId) => {
-    onRequestAction(requestId, 'approved')
-    setSelectedRequest(null)
+  const handleApprove = async (requestId) => {
+    try {
+      setUpdating(requestId)
+      const reviewData = {
+        status: 'approved',
+        reviewedBy: 'Admin', // In a real app, get this from auth
+        reviewNotes: 'Approved by administrator'
+      }
+      
+      const response = await bookingAPI.updateStatus(requestId, reviewData)
+      
+      if (response.success) {
+        // Update local state
+        setRequests(prev => 
+          prev.map(req => 
+            req._id === requestId ? response.data : req
+          )
+        )
+        setSelectedRequest(null)
+        alert('Request approved successfully!')
+      }
+    } catch (err) {
+      console.error('Error approving request:', err)
+      alert('Failed to approve request. Please try again.')
+    } finally {
+      setUpdating(null)
+    }
   }
 
-  const handleReject = (requestId) => {
-    onRequestAction(requestId, 'rejected')
-    setSelectedRequest(null)
+  const handleReject = async (requestId) => {
+    try {
+      setUpdating(requestId)
+      const reviewData = {
+        status: 'rejected',
+        reviewedBy: 'Admin', // In a real app, get this from auth
+        reviewNotes: 'Rejected by administrator'
+      }
+      
+      const response = await bookingAPI.updateStatus(requestId, reviewData)
+      
+      if (response.success) {
+        // Update local state
+        setRequests(prev => 
+          prev.map(req => 
+            req._id === requestId ? response.data : req
+          )
+        )
+        setSelectedRequest(null)
+        alert('Request rejected successfully!')
+      }
+    } catch (err) {
+      console.error('Error rejecting request:', err)
+      alert('Failed to reject request. Please try again.')
+    } finally {
+      setUpdating(null)
+    }
   }
 
   const formatDate = (dateString) => {
@@ -53,6 +130,82 @@ const AdminPanel = ({ requests, onRequestAction }) => {
     const rejected = requests.filter(r => r.status === 'rejected').length
     
     return { total, pending, approved, rejected }
+  }
+
+  if (loading) {
+    return (
+      <div className="admin-panel">
+        <div className="loading-container">
+          <Loader2 className="loading-spinner" size={48} />
+          <p>Loading booking requests...</p>
+        </div>
+        <style>{`
+          .admin-panel {
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+          }
+          .loading-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            text-align: center;
+          }
+          .loading-spinner {
+            animation: spin 1s linear infinite;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+          }
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="admin-panel">
+        <div className="error-container">
+          <h2>Error Loading Requests</h2>
+          <p>{error}</p>
+          <button onClick={loadRequests} className="retry-button">
+            Try Again
+          </button>
+        </div>
+        <style>{`
+          .admin-panel {
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+          }
+          .error-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            text-align: center;
+          }
+          .retry-button {
+            padding: 0.75rem 1.5rem;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s;
+          }
+          .retry-button:hover {
+            background: var(--primary-dark);
+          }
+        `}</style>
+      </div>
+    )
   }
 
   const stats = getStats()
@@ -154,17 +307,37 @@ const AdminPanel = ({ requests, onRequestAction }) => {
                       <>
                         <button 
                           className="btn btn-success"
-                          onClick={() => handleApprove(request.id)}
+                          onClick={() => handleApprove(request._id)}
+                          disabled={updating === request._id}
                         >
-                          <Check size={16} />
-                          Approve
+                          {updating === request._id ? (
+                            <>
+                              <Loader2 size={16} className="loading-spinner" />
+                              Approving...
+                            </>
+                          ) : (
+                            <>
+                              <Check size={16} />
+                              Approve
+                            </>
+                          )}
                         </button>
                         <button 
                           className="btn btn-danger"
-                          onClick={() => handleReject(request.id)}
+                          onClick={() => handleReject(request._id)}
+                          disabled={updating === request._id}
                         >
-                          <X size={16} />
-                          Reject
+                          {updating === request._id ? (
+                            <>
+                              <Loader2 size={16} className="loading-spinner" />
+                              Rejecting...
+                            </>
+                          ) : (
+                            <>
+                              <X size={16} />
+                              Reject
+                            </>
+                          )}
                         </button>
                       </>
                     )}
@@ -280,17 +453,37 @@ const AdminPanel = ({ requests, onRequestAction }) => {
                 <>
                   <button 
                     className="btn btn-danger"
-                    onClick={() => handleReject(selectedRequest.id)}
+                    onClick={() => handleReject(selectedRequest._id)}
+                    disabled={updating === selectedRequest._id}
                   >
-                    <X size={16} />
-                    Reject
+                    {updating === selectedRequest._id ? (
+                      <>
+                        <Loader2 size={16} className="loading-spinner" />
+                        Rejecting...
+                      </>
+                    ) : (
+                      <>
+                        <X size={16} />
+                        Reject
+                      </>
+                    )}
                   </button>
                   <button 
                     className="btn btn-success"
-                    onClick={() => handleApprove(selectedRequest.id)}
+                    onClick={() => handleApprove(selectedRequest._id)}
+                    disabled={updating === selectedRequest._id}
                   >
-                    <Check size={16} />
-                    Approve
+                    {updating === selectedRequest._id ? (
+                      <>
+                        <Loader2 size={16} className="loading-spinner" />
+                        Approving...
+                      </>
+                    ) : (
+                      <>
+                        <Check size={16} />
+                        Approve
+                      </>
+                    )}
                   </button>
                 </>
               )}
