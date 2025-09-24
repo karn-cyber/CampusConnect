@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react'
-import { MapPin, Users, Wifi, Monitor, Building2, Loader2, Calendar, Coffee, Car, MessageSquare, X } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { MapPin, Users, Wifi, Monitor, Building2, Loader2, Calendar, Coffee, Car, MessageSquare, X, Search } from 'lucide-react'
 import { roomAPI, bookingAPI } from '../services/api.js'
+import Toast from './Toast.jsx'
+import { useToast } from '../hooks/useToast.js'
 
 const RoomBooking = ({ onBookingRequest }) => {
   const [rooms, setRooms] = useState([])
@@ -9,23 +11,28 @@ const RoomBooking = ({ onBookingRequest }) => {
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [selectedDate, setSelectedDate] = useState('')
-  const [selectedSlot, setSelectedSlot] = useState('')
+  const [selectedStartTime, setSelectedStartTime] = useState('')
+  const [selectedEndTime, setSelectedEndTime] = useState('')
   const [availableSlots, setAvailableSlots] = useState([])
   const [submitting, setSubmitting] = useState(false)
+  const [roomAvailability, setRoomAvailability] = useState({})
+  const [searchTerm, setSearchTerm] = useState('')
+  const { toasts, removeToast, success, error: showError } = useToast()
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
     studentId: '',
     department: '',
     purpose: ''
   })
 
-  // Time slots available for booking
-  const timeSlots = [
-    '09:00-10:00', '10:00-11:00', '11:00-12:00', '12:00-13:00',
-    '13:00-14:00', '14:00-15:00', '15:00-16:00', '16:00-17:00',
-    '17:00-18:00', '18:00-19:00', '19:00-20:00', '20:00-21:00'
-  ]
+  // Time slots available for booking (30-minute intervals)
+  const timeSlots = useMemo(() => [
+    '08:30-09:00', '09:00-09:30', '09:30-10:00', '10:00-10:30', '10:30-11:00',
+    '11:00-11:30', '11:30-12:00', '12:00-12:30', '12:30-13:00', '13:00-13:30',
+    '13:30-14:00', '14:00-14:30', '14:30-15:00', '15:00-15:30', '15:30-16:00',
+    '16:00-16:30', '16:30-17:00', '17:00-17:30', '17:30-18:00', '18:00-18:30',
+    '18:30-19:00', '19:00-19:30', '19:30-20:00', '20:00-20:30', '20:30-21:00'
+  ], [])
 
   // Load rooms on component mount
   useEffect(() => {
@@ -52,10 +59,90 @@ const RoomBooking = ({ onBookingRequest }) => {
     }
   }
 
-  // Group rooms by building for organized display
-  const groupRoomsByBuilding = () => {
+  // Load today's availability for all rooms
+  useEffect(() => {
+    if (rooms.length > 0) {
+      const loadAvailability = async () => {
+        console.log('Loading availability for', rooms.length, 'rooms')
+        const today = new Date().toISOString().split('T')[0]
+        const availability = {}
+        
+        for (const room of rooms) {
+          try {
+            console.log(`Checking availability for ${room.building} - Room ${room.roomNumber}`)
+            const response = await bookingAPI.checkAvailability(room.building, room.roomNumber, today)
+            console.log(`Availability response for ${room.building}-${room.roomNumber}:`, response)
+            
+            if (response.success) {
+              const roomKey = `${room.building}-${room.roomNumber}`
+              // Store both available and booked slots
+              availability[roomKey] = {
+                availableSlots: response.data.availableSlots || [],
+                bookedSlots: response.data.bookedSlots || []
+              }
+            } else {
+              console.warn(`Failed to get availability for ${room.building}-${room.roomNumber}:`, response.message)
+              // Default to all slots available if API fails
+              const roomKey = `${room.building}-${room.roomNumber}`
+              availability[roomKey] = {
+                availableSlots: timeSlots,
+                bookedSlots: []
+              }
+            }
+          } catch (err) {
+            console.error('Error checking availability for room:', room.roomNumber, err)
+            // Default to all slots available if there's an error
+            const roomKey = `${room.building}-${room.roomNumber}`
+            availability[roomKey] = {
+              availableSlots: timeSlots,
+              bookedSlots: []
+            }
+          }
+        }
+        
+        console.log('Final availability object:', availability)
+        setRoomAvailability(availability)
+      }
+      
+      loadAvailability()
+    }
+  }, [rooms, timeSlots])
+
+  // Get building abbreviation
+  const getBuildingAbbreviation = (buildingName) => {
+    const abbreviations = {
+      'Academic Block A': 'A',
+      'Academic Block B': 'B', 
+      'Main Building': 'M',
+      'Academic Block C': 'C',
+      'Library Block': 'L'
+    }
+    return abbreviations[buildingName] || buildingName.charAt(0).toUpperCase()
+  }
+
+  // Filter rooms based on search term
+  const getFilteredRooms = () => {
+    if (!searchTerm.trim()) return rooms
+    
+    return rooms.filter(room => {
+      const buildingAbbrev = getBuildingAbbreviation(room.building)
+      const roomDisplayName = `${buildingAbbrev} - ${room.roomNumber}`
+      const searchLower = searchTerm.toLowerCase()
+      
+      return (
+        roomDisplayName.toLowerCase().includes(searchLower) ||
+        room.building.toLowerCase().includes(searchLower) ||
+        room.roomNumber.toString().includes(searchLower) ||
+        (room.amenities || []).some(amenity => amenity.toLowerCase().includes(searchLower))
+      )
+    })
+  }
+
+  // Group filtered rooms by building
+  const getFilteredGroupedRooms = () => {
+    const filtered = getFilteredRooms()
     const grouped = {}
-    rooms.forEach(room => {
+    filtered.forEach(room => {
       if (!grouped[room.building]) {
         grouped[room.building] = {
           name: room.building,
@@ -86,7 +173,8 @@ const RoomBooking = ({ onBookingRequest }) => {
   // Handle room selection
   const handleRoomSelect = (room) => {
     setSelectedRoom(room)
-    setSelectedSlot('')
+    setSelectedStartTime('')
+    setSelectedEndTime('')
     setAvailableSlots([])
     setShowForm(true)
     
@@ -98,7 +186,8 @@ const RoomBooking = ({ onBookingRequest }) => {
   // Handle date change
   const handleDateChange = (date) => {
     setSelectedDate(date)
-    setSelectedSlot('')
+    setSelectedStartTime('')
+    setSelectedEndTime('')
     
     if (selectedRoom) {
       checkAvailability(selectedRoom.building, selectedRoom.roomNumber, date)
@@ -107,24 +196,59 @@ const RoomBooking = ({ onBookingRequest }) => {
     }
   }
 
+  // Helper function to get available end times based on start time
+  const getAvailableEndTimes = (startTime) => {
+    if (!startTime) return []
+    
+    const startIndex = timeSlots.findIndex(slot => slot.split('-')[0] === startTime)
+    if (startIndex === -1) return []
+    
+    // Allow booking for maximum 2 hours (4 slots of 30 minutes each)
+    const maxSlots = 4
+    const endTimes = []
+    
+    for (let i = 1; i <= maxSlots && startIndex + i < timeSlots.length; i++) {
+      const endTime = timeSlots[startIndex + i].split('-')[1]
+      endTimes.push(endTime)
+    }
+    
+    return endTimes
+  }
+
+  // Helper function to get all time slots between start and end
+  const getSelectedTimeSlots = (startTime, endTime) => {
+    if (!startTime || !endTime) return []
+    
+    const startIndex = timeSlots.findIndex(slot => slot.split('-')[0] === startTime)
+    const endIndex = timeSlots.findIndex(slot => slot.split('-')[1] === endTime)
+    
+    if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) return []
+    
+    return timeSlots.slice(startIndex, endIndex + 1)
+  }
+
   // Handle booking form submission
   const handleSubmit = async (e) => {
     e.preventDefault()
     
-    if (!selectedRoom || !selectedDate || !selectedSlot) {
-      alert('Please select a room, date, and time slot')
+    if (!selectedRoom || !selectedDate || !selectedStartTime || !selectedEndTime) {
+      showError('Missing Information', 'Please select a room, date, start time, and end time')
       return
     }
 
     try {
       setSubmitting(true)
       
+      const selectedSlots = getSelectedTimeSlots(selectedStartTime, selectedEndTime)
+      const timeSlotString = `${selectedStartTime}-${selectedEndTime}`
+      
       const bookingData = {
         ...formData,
         building: selectedRoom.building,
         room: selectedRoom.roomNumber,
         date: selectedDate,
-        timeSlot: selectedSlot
+        timeSlot: timeSlotString,
+        timeSlots: selectedSlots
       }
 
       const response = await bookingAPI.create(bookingData)
@@ -136,11 +260,19 @@ const RoomBooking = ({ onBookingRequest }) => {
         
         // Reset form
         resetForm()
-        alert('Booking request submitted successfully!')
+        
+        // Show success toast
+        success(
+          'Booking Request Submitted!', 
+          `Your request for ${selectedRoom.building} - Room ${selectedRoom.roomNumber} has been submitted successfully. You'll receive a notification once it's reviewed.`
+        )
       }
     } catch (err) {
       console.error('Error submitting booking:', err)
-      alert(err.message || 'Failed to submit booking request. Please try again.')
+      showError(
+        'Booking Failed', 
+        err.message || 'Failed to submit booking request. Please check your details and try again.'
+      )
     } finally {
       setSubmitting(false)
     }
@@ -151,11 +283,11 @@ const RoomBooking = ({ onBookingRequest }) => {
     setShowForm(false)
     setSelectedRoom(null)
     setSelectedDate('')
-    setSelectedSlot('')
+    setSelectedStartTime('')
+    setSelectedEndTime('')
     setAvailableSlots([])
     setFormData({
       name: '',
-      email: '',
       studentId: '',
       department: '',
       purpose: ''
@@ -210,14 +342,35 @@ const RoomBooking = ({ onBookingRequest }) => {
     )
   }
 
-  const buildingsData = groupRoomsByBuilding()
+  const buildingsData = getFilteredGroupedRooms()
 
   // Main render
   return (
     <div className="room-booking">
+      {/* Toast Notifications */}
+      <Toast toasts={toasts} removeToast={removeToast} />
+      
       <div className="booking-header">
-        <h1>🏢 Room Booking System</h1>
-        <p>Select from available rooms across campus buildings</p>
+        <div className="header-top">
+          <div className="header-content">
+            <h1>Room Booking System</h1>
+            <p>Select from available rooms across campus buildings</p>
+          </div>
+        </div>
+        
+        {/* Search Bar */}
+        <div className="search-section">
+          <div className="search-container">
+            <Search size={20} />
+            <input
+              type="text"
+              placeholder="Search rooms (e.g., A - 303, WiFi, Projector...)"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="search-input"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Buildings and Rooms Grid */}
@@ -237,7 +390,7 @@ const RoomBooking = ({ onBookingRequest }) => {
                 onClick={() => handleRoomSelect(room)}
               >
                 <div className="room-header">
-                  <h4>Room {room.roomNumber}</h4>
+                  <h4>{getBuildingAbbreviation(room.building)} - {room.roomNumber}</h4>
                   <div className="room-capacity">
                     <Users size={18} />
                     <span>{room.capacity} capacity</span>
@@ -256,6 +409,35 @@ const RoomBooking = ({ onBookingRequest }) => {
                       <span>{amenity}</span>
                     </div>
                   ))}
+                </div>
+
+                {/* Today's Availability Indicators */}
+                <div className="availability-preview">
+                  <div className="availability-title">Evening Slots (5-11 PM)</div>
+                  <div className="slots-grid">
+                    {timeSlots
+                      .filter(slot => {
+                        const startTime = slot.split('-')[0]
+                        const hour = parseInt(startTime.split(':')[0])
+                        return hour >= 17 && hour <= 22 // 5 PM (17:00) to 10:30 PM (22:30)
+                      })
+                      .map((slot) => {
+                        const roomKey = `${room.building}-${room.roomNumber}`
+                        const roomData = roomAvailability[roomKey] || { availableSlots: [], bookedSlots: [] }
+                        const isAvailable = roomData.availableSlots.includes(slot)
+                        const isBooked = roomData.bookedSlots.includes(slot)
+                        
+                        return (
+                          <div 
+                            key={slot}
+                            className={`time-slot-indicator ${isBooked ? 'booked' : isAvailable ? 'available' : 'unavailable'}`}
+                            title={`${slot} - ${isBooked ? 'Booked' : isAvailable ? 'Available' : 'Unavailable'}`}
+                          >
+                            {slot}
+                          </div>
+                        )
+                      })}
+                  </div>
                 </div>
                 
                 <button className="book-button">
@@ -302,18 +484,43 @@ const RoomBooking = ({ onBookingRequest }) => {
                       onChange={(e) => handleDateChange(e.target.value)}
                     />
                   </div>
+                </div>
+                <div className="form-row">
                   <div className="form-group">
-                    <label>Time Slot *</label>
+                    <label>Start Time *</label>
                     <select
                       required
-                      value={selectedSlot}
-                      onChange={(e) => setSelectedSlot(e.target.value)}
+                      value={selectedStartTime}
+                      onChange={(e) => {
+                        setSelectedStartTime(e.target.value)
+                        setSelectedEndTime('') // Reset end time when start time changes
+                      }}
                       disabled={!selectedDate}
                     >
-                      <option value="">Select a time slot</option>
-                      {availableSlots.map((slot) => (
-                        <option key={slot} value={slot}>
-                          {slot}
+                      <option value="">Select start time</option>
+                      {timeSlots.map((slot) => {
+                        const startTime = slot.split('-')[0]
+                        const isAvailable = availableSlots.includes(slot)
+                        return (
+                          <option key={startTime} value={startTime} disabled={!isAvailable}>
+                            {startTime} {!isAvailable ? '(Booked)' : ''}
+                          </option>
+                        )
+                      })}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>End Time * (Max 2 hours)</label>
+                    <select
+                      required
+                      value={selectedEndTime}
+                      onChange={(e) => setSelectedEndTime(e.target.value)}
+                      disabled={!selectedStartTime}
+                    >
+                      <option value="">Select end time</option>
+                      {getAvailableEndTimes(selectedStartTime).map((endTime) => (
+                        <option key={endTime} value={endTime}>
+                          {endTime}
                         </option>
                       ))}
                     </select>
@@ -336,18 +543,6 @@ const RoomBooking = ({ onBookingRequest }) => {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Email *</label>
-                    <input
-                      type="email"
-                      required
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="your.email@university.edu"
-                    />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
                     <label>Student/Staff ID</label>
                     <input
                       type="text"
@@ -356,6 +551,8 @@ const RoomBooking = ({ onBookingRequest }) => {
                       placeholder="Enter your ID number"
                     />
                   </div>
+                </div>
+                <div className="form-row">
                   <div className="form-group">
                     <label>Department</label>
                     <input
@@ -415,6 +612,8 @@ const RoomBooking = ({ onBookingRequest }) => {
         </div>
       )}
 
+      {/* User Profile Modal - Removed: Now accessible from nav bar */}
+
       <style>{`
         .room-booking {
           padding: 2rem;
@@ -463,6 +662,17 @@ const RoomBooking = ({ onBookingRequest }) => {
           margin-bottom: 3rem;
         }
 
+        .header-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 2rem;
+        }
+
+        .header-content {
+          flex: 1;
+        }
+
         .booking-header h1 {
           font-size: 2.5rem;
           color: var(--text-primary);
@@ -472,6 +682,63 @@ const RoomBooking = ({ onBookingRequest }) => {
 
         .booking-header p {
           font-size: 1.2rem;
+          color: var(--text-secondary);
+        }
+
+        .profile-button {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          background: var(--primary-color);
+          color: white;
+          border: none;
+          padding: 0.75rem 1.5rem;
+          border-radius: 12px;
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 0.95rem;
+          transition: all 0.3s;
+          box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+        }
+
+        .profile-button:hover {
+          background: var(--primary-dark);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+        }
+
+        .search-section {
+          margin-bottom: 1rem;
+        }
+
+        .search-container {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          max-width: 500px;
+          margin: 0 auto;
+          background: white;
+          border: 2px solid var(--border-color);
+          border-radius: 16px;
+          padding: 0.75rem 1.25rem;
+          transition: all 0.3s;
+        }
+
+        .search-container:focus-within {
+          border-color: var(--primary-color);
+          box-shadow: 0 0 0 3px var(--primary-light);
+        }
+
+        .search-input {
+          flex: 1;
+          border: none;
+          outline: none;
+          font-size: 1rem;
+          color: var(--text-primary);
+          background: transparent;
+        }
+
+        .search-input::placeholder {
           color: var(--text-secondary);
         }
 
@@ -587,6 +854,67 @@ const RoomBooking = ({ onBookingRequest }) => {
         .book-button:hover {
           background: var(--primary-dark);
           transform: translateY(-1px);
+        }
+
+        /* Availability Preview Styles */
+        .availability-preview {
+          margin-bottom: 1rem;
+          padding: 0.75rem;
+          background: #f8fafc;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+        }
+
+        .availability-title {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #64748b;
+          margin-bottom: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .slots-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+          gap: 0.4rem;
+        }
+
+        .time-slot-indicator {
+          padding: 0.3rem 0.2rem;
+          border-radius: 6px;
+          font-size: 0.6rem;
+          font-weight: 600;
+          text-align: center;
+          transition: all 0.2s ease;
+          cursor: pointer;
+          border: 2px solid;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .time-slot-indicator.available {
+          background-color: #dcfce7;
+          color: #166534;
+          border-color: #16a34a;
+        }
+
+        .time-slot-indicator.booked {
+          background-color: #fecaca;
+          color: #991b1b;
+          border-color: #dc2626;
+        }
+
+        .time-slot-indicator.unavailable {
+          background-color: #f3f4f6;
+          color: #6b7280;
+          border-color: #d1d5db;
+        }
+
+        .time-slot-indicator:hover {
+          transform: scale(1.05);
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .booking-modal {
@@ -764,6 +1092,17 @@ const RoomBooking = ({ onBookingRequest }) => {
             font-size: 2rem;
           }
 
+          .header-top {
+            flex-direction: column;
+            gap: 1rem;
+            text-align: center;
+          }
+
+          .search-container {
+            max-width: 100%;
+            margin: 0;
+          }
+
           .rooms-grid {
             grid-template-columns: 1fr;
           }
@@ -798,6 +1137,11 @@ const RoomBooking = ({ onBookingRequest }) => {
 
           .building-subtitle {
             margin-left: 0;
+          }
+
+          .profile-button {
+            padding: 0.625rem 1.25rem;
+            font-size: 0.875rem;
           }
         }
       `}</style>

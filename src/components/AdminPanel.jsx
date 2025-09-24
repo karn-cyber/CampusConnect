@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Check, X, Clock, User, Calendar, MapPin, Users, MessageSquare, Filter, Loader2 } from 'lucide-react'
+import { Check, X, Clock, User, Calendar, MapPin, Users, MessageSquare, Filter, Loader2, Building2, Mail, Phone, BookOpen } from 'lucide-react'
 import { bookingAPI } from '../services/api.js'
+import Toast from './Toast.jsx'
+import { useToast } from '../hooks/useToast.js'
 
 const AdminPanel = () => {
   const [requests, setRequests] = useState([])
@@ -9,6 +11,7 @@ const AdminPanel = () => {
   const [filterStatus, setFilterStatus] = useState('all')
   const [selectedRequest, setSelectedRequest] = useState(null)
   const [updating, setUpdating] = useState(null)
+  const { toasts, removeToast, success, error: showError } = useToast()
 
   // Load requests on component mount
   useEffect(() => {
@@ -53,7 +56,6 @@ const AdminPanel = () => {
       setUpdating(requestId)
       const reviewData = {
         status: 'approved',
-        reviewedBy: 'Admin', // In a real app, get this from auth
         reviewNotes: 'Approved by administrator'
       }
       
@@ -67,11 +69,17 @@ const AdminPanel = () => {
           )
         )
         setSelectedRequest(null)
-        alert('Request approved successfully!')
+        
+        // Show success toast
+        const request = requests.find(r => r._id === requestId)
+        success(
+          'Booking Approved!', 
+          `Room ${request?.building} - ${request?.room} booking has been approved successfully.`
+        )
       }
     } catch (err) {
       console.error('Error approving request:', err)
-      alert('Failed to approve request. Please try again.')
+      showError('Approval Failed', 'Failed to approve the booking request. Please try again.')
     } finally {
       setUpdating(null)
     }
@@ -82,7 +90,6 @@ const AdminPanel = () => {
       setUpdating(requestId)
       const reviewData = {
         status: 'rejected',
-        reviewedBy: 'Admin', // In a real app, get this from auth
         reviewNotes: 'Rejected by administrator'
       }
       
@@ -96,11 +103,17 @@ const AdminPanel = () => {
           )
         )
         setSelectedRequest(null)
-        alert('Request rejected successfully!')
+        
+        // Show warning toast
+        const request = requests.find(r => r._id === requestId)
+        showError(
+          'Booking Rejected', 
+          `Room ${request?.building} - ${request?.room} booking has been rejected.`
+        )
       }
     } catch (err) {
       console.error('Error rejecting request:', err)
-      alert('Failed to reject request. Please try again.')
+      showError('Rejection Failed', 'Failed to reject the booking request. Please try again.')
     } finally {
       setUpdating(null)
     }
@@ -212,6 +225,9 @@ const AdminPanel = () => {
 
   return (
     <div className="admin-panel">
+      {/* Toast Notifications */}
+      <Toast toasts={toasts} removeToast={removeToast} />
+      
       <div className="section-header">
         <h2>Admin Panel</h2>
         <p>Manage room booking requests</p>
@@ -288,16 +304,19 @@ const AdminPanel = () => {
         ) : (
           <div className="requests-list">
             {filteredRequests.map(request => (
-              <div key={request.id} className="request-card card">
+              <div key={request._id} className="request-card card">
                 <div className="request-header">
                   <div className="request-info">
-                    <h4>{request.roomName}</h4>
+                    <h4>
+                      <Building2 size={20} />
+                      {request.building} - Room {request.room}
+                    </h4>
                     <div className="request-meta">
                       <span className={`status-badge ${getStatusColor(request.status)}`}>
-                        {request.status}
+                        {request.status.toUpperCase()}
                       </span>
                       <span className="request-date">
-                        Requested {formatDate(request.requestDate)}
+                        Requested {formatDate(request.createdAt)}
                       </span>
                     </div>
                   </div>
@@ -353,7 +372,7 @@ const AdminPanel = () => {
                 <div className="request-details">
                   <div className="detail-item">
                     <User size={16} />
-                    <span>{request.requesterName}</span>
+                    <span>{request.name}</span>
                   </div>
                   <div className="detail-item">
                     <Calendar size={16} />
@@ -361,16 +380,21 @@ const AdminPanel = () => {
                   </div>
                   <div className="detail-item">
                     <Clock size={16} />
-                    <span>{formatTime(request.startTime)} - {formatTime(request.endTime)}</span>
+                    <span>{request.timeSlot}</span>
                   </div>
-                  <div className="detail-item">
-                    <Users size={16} />
-                    <span>{request.attendees} attendees</span>
-                  </div>
+                  {request.studentId && (
+                    <div className="detail-item">
+                      <BookOpen size={16} />
+                      <span>ID: {request.studentId}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="request-purpose">
-                  <strong>Purpose:</strong> {request.purpose}
+                  <MessageSquare size={16} />
+                  <div>
+                    <strong>Purpose:</strong> {request.purpose}
+                  </div>
                 </div>
               </div>
             ))}
@@ -383,9 +407,9 @@ const AdminPanel = () => {
         <div className="modal-overlay" onClick={() => setSelectedRequest(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Request Details</h3>
+              <h3>Booking Request Details</h3>
               <span className={`status-badge ${getStatusColor(selectedRequest.status)}`}>
-                {selectedRequest.status}
+                {selectedRequest.status.toUpperCase()}
               </span>
             </div>
 
@@ -393,8 +417,12 @@ const AdminPanel = () => {
               <h4>Room Information</h4>
               <div className="detail-grid">
                 <div className="detail-item">
+                  <Building2 size={18} />
+                  <span><strong>Building:</strong> {selectedRequest.building}</span>
+                </div>
+                <div className="detail-item">
                   <MapPin size={18} />
-                  <span><strong>Room:</strong> {selectedRequest.roomName}</span>
+                  <span><strong>Room:</strong> {selectedRequest.room}</span>
                 </div>
               </div>
             </div>
@@ -408,11 +436,7 @@ const AdminPanel = () => {
                 </div>
                 <div className="detail-item">
                   <Clock size={18} />
-                  <span><strong>Time:</strong> {formatTime(selectedRequest.startTime)} - {formatTime(selectedRequest.endTime)}</span>
-                </div>
-                <div className="detail-item">
-                  <Users size={18} />
-                  <span><strong>Attendees:</strong> {selectedRequest.attendees} people</span>
+                  <span><strong>Time:</strong> {selectedRequest.timeSlot}</span>
                 </div>
               </div>
             </div>
@@ -422,25 +446,46 @@ const AdminPanel = () => {
               <div className="detail-grid">
                 <div className="detail-item">
                   <User size={18} />
-                  <span><strong>Name:</strong> {selectedRequest.requesterName}</span>
+                  <span><strong>Name:</strong> {selectedRequest.name}</span>
                 </div>
-                <div className="detail-item">
-                  <span><strong>Email:</strong> {selectedRequest.requesterEmail}</span>
-                </div>
+                {selectedRequest.studentId && (
+                  <div className="detail-item">
+                    <BookOpen size={18} />
+                    <span><strong>Student/Staff ID:</strong> {selectedRequest.studentId}</span>
+                  </div>
+                )}
+                {selectedRequest.department && (
+                  <div className="detail-item">
+                    <Building2 size={18} />
+                    <span><strong>Department:</strong> {selectedRequest.department}</span>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="detail-section">
               <h4>Purpose</h4>
-              <p>{selectedRequest.purpose}</p>
+              <div className="purpose-content">
+                <MessageSquare size={18} />
+                <p>{selectedRequest.purpose}</p>
+              </div>
             </div>
 
-            {selectedRequest.additionalNotes && (
-              <div className="detail-section">
-                <h4>Additional Notes</h4>
-                <p>{selectedRequest.additionalNotes}</p>
+            <div className="detail-section">
+              <h4>Request Information</h4>
+              <div className="detail-grid">
+                <div className="detail-item">
+                  <Calendar size={18} />
+                  <span><strong>Requested:</strong> {formatDate(selectedRequest.createdAt)}</span>
+                </div>
+                {selectedRequest.reviewedAt && (
+                  <div className="detail-item">
+                    <Clock size={18} />
+                    <span><strong>Reviewed:</strong> {formatDate(selectedRequest.reviewedAt)}</span>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
 
             <div className="modal-actions">
               <button 
@@ -631,6 +676,9 @@ const AdminPanel = () => {
         }
         
         .request-info h4 {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
           font-size: 1.25rem;
           font-weight: 600;
           color: var(--text-primary);
@@ -677,12 +725,30 @@ const AdminPanel = () => {
         }
         
         .request-purpose {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.5rem;
           color: var(--text-secondary);
           font-size: 0.875rem;
         }
         
+        .request-purpose div {
+          flex: 1;
+        }
+        
         .request-purpose strong {
           color: var(--text-primary);
+        }
+
+        .purpose-content {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.5rem;
+        }
+
+        .purpose-content p {
+          flex: 1;
+          margin: 0;
         }
         
         .modal-header {

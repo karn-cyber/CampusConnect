@@ -4,6 +4,7 @@ import Header from './components/Header'
 import Dashboard from './components/Dashboard'
 import RoomBooking from './components/RoomBooking'
 import AdminPanel from './components/AdminPanel'
+import UserProfile from './components/UserProfile'
 import Login from './components/Login'
 import Signup from './components/Signup'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -57,6 +58,7 @@ function AppContent() {
     if (path === '/') return 'dashboard'
     if (path === '/room-booking') return 'booking'
     if (path === '/admin') return 'admin'
+    if (path === '/profile') return 'profile'
     return 'dashboard'
   }
 
@@ -70,6 +72,9 @@ function AppContent() {
         break
       case 'admin':
         navigate('/admin')
+        break
+      case 'profile':
+        navigate('/profile')
         break
       default:
         navigate('/')
@@ -137,6 +142,14 @@ function AppContent() {
             element={
               <ProtectedRoute requireAdmin={true}>
                 <AdminPanel />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <UserProfile />
               </ProtectedRoute>
             } 
           />

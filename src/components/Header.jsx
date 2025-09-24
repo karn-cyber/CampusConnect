@@ -79,6 +79,16 @@ const Header = ({ currentView, setCurrentView, user, onLogout }) => {
                   </div>
                 </div>
                 <hr className="menu-divider" />
+                <button 
+                  className="menu-item profile-item" 
+                  onClick={() => {
+                    setShowUserMenu(false)
+                    setCurrentView('profile')
+                  }}
+                >
+                  <User size={18} />
+                  My Profile
+                </button>
                 <button className="menu-item logout-item" onClick={handleLogout}>
                   <LogOut size={18} />
                   Sign Out

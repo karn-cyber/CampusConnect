@@ -97,16 +97,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
 // Create new booking request
 router.post('/', authenticateToken, [
   body('name').trim().notEmpty().withMessage('Name is required'),
-  body('email').isEmail().withMessage('Valid email is required'),
   body('studentId').trim().notEmpty().withMessage('Student ID is required'),
   body('department').trim().notEmpty().withMessage('Department is required'),
   body('building').isIn(['A Block', 'C Block', 'Main Auditorium']).withMessage('Invalid building'),
   body('room').trim().notEmpty().withMessage('Room is required'),
   body('date').isISO8601().withMessage('Valid date is required'),
-  body('timeSlot').isIn([
-    '09:00-10:00', '10:00-11:00', '11:00-12:00', '12:00-13:00',
-    '13:00-14:00', '14:00-15:00', '15:00-16:00', '16:00-17:00'
-  ]).withMessage('Invalid time slot'),
+  body('timeSlot').trim().notEmpty().withMessage('Time slot is required'),
   body('purpose').trim().notEmpty().withMessage('Purpose is required')
 ], async (req, res) => {
   try {
@@ -279,8 +275,11 @@ router.get('/availability/:building/:room', authenticateToken, async (req, res) 
     const bookedTimeSlots = bookedSlots.map(booking => booking.timeSlot);
 
     const allTimeSlots = [
-      '09:00-10:00', '10:00-11:00', '11:00-12:00', '12:00-13:00',
-      '13:00-14:00', '14:00-15:00', '15:00-16:00', '16:00-17:00'
+      '08:30-09:00', '09:00-09:30', '09:30-10:00', '10:00-10:30', '10:30-11:00',
+      '11:00-11:30', '11:30-12:00', '12:00-12:30', '12:30-13:00', '13:00-13:30',
+      '13:30-14:00', '14:00-14:30', '14:30-15:00', '15:00-15:30', '15:30-16:00',
+      '16:00-16:30', '16:30-17:00', '17:00-17:30', '17:30-18:00', '18:00-18:30',
+      '18:30-19:00', '19:00-19:30', '19:30-20:00', '20:00-20:30', '20:30-21:00'
     ];
 
     const availableSlots = allTimeSlots.filter(slot => !bookedTimeSlots.includes(slot));

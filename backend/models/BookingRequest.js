@@ -40,11 +40,8 @@ const bookingRequestSchema = new mongoose.Schema({
   },
   timeSlot: {
     type: String,
-    required: true,
-    enum: [
-      '09:00-10:00', '10:00-11:00', '11:00-12:00', '12:00-13:00',
-      '13:00-14:00', '14:00-15:00', '15:00-16:00', '16:00-17:00'
-    ]
+    required: true
+    // Removed enum validation to allow flexible time slots like "17:00-19:30"
   },
   purpose: {
     type: String,
